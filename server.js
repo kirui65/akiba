@@ -201,7 +201,7 @@ app.post('/api/withdraw', async (req, res) => {
 // ── DEPOSIT: Trigger Lipwa STK push ──────────────────────────────────────────
 app.post('/api/deposit', async (req, res) => {
     const { amount, phone_number, api_ref } = req.body;
-    if (!amount || isNaN(amount) || Number(amount) < 50) return res.status(400).json({ error: 'Minimum deposit is KES 50.' });
+    if (!amount || isNaN(amount) || Number(amount) < 100) return res.status(400).json({ error: 'Minimum deposit is KES 100.' });
     if (!phone_number || !/^(07|01|254)\d{8,9}$/.test(String(phone_number).replace('+', ''))) return res.status(400).json({ error: 'Invalid phone number.' });
     if (!api_ref || typeof api_ref !== 'string' || api_ref.length > 64) return res.status(400).json({ error: 'Invalid api_ref.' });
 
