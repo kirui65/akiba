@@ -759,15 +759,40 @@
     }
 
     // ── Deposit ───────────────────────────────────────────────────────────────
-    function pollPaymentStatus(ref, amount, onSuccess, onFail){
-        var MAX=36, attempts=0;
+    // NOTE: We no longer gate the balance refresh behind /api/status returning an
+    // exact 'payment.success' string. Lipwa's status wording isn't something we
+    // control, and a mismatch there was silently blocking the balance update even
+    // when the webhook had already credited the account in Firestore. Instead we
+    // poll /api/user/:phone directly and treat a balance increase as the source of
+    // truth, while /api/status is only used as a secondary signal to detect failure.
+    function pollPaymentStatus(ref, amount, oldBalance, onSuccess, onFail){
+        var MAX=24, attempts=0; // 24 * 5s = 120s total window
         var iv=setInterval(function(){
             attempts++;
-            fetch('/api/status?ref='+encodeURIComponent(ref)).then(function(r){return r.json();}).then(function(d){
-                if(d.status==='payment.success'){clearInterval(iv); onSuccess();}
-                else if(d.status==='payment.failed'){clearInterval(iv); onFail('Payment failed or cancelled.');}
-                else if(attempts>=MAX){clearInterval(iv); onFail('Payment timed out. Contact support if you paid.');}
-            }).catch(function(){ if(attempts>=MAX){clearInterval(iv); onFail('Network error.');} });
+
+            // 1) Source of truth: has the balance actually moved?
+            api('/api/user/'+currentUser.phone).then(function(u){
+                if(u.balance > oldBalance){
+                    clearInterval(iv);
+                    onSuccess(u);
+                    return;
+                }
+                // 2) Secondary signal: did Lipwa explicitly report failure?
+                fetch('/api/status?ref='+encodeURIComponent(ref)).then(function(r){return r.json();}).then(function(d){
+                    var s = (d.status||'').toLowerCase();
+                    if(s.indexOf('fail')>-1 || s.indexOf('cancel')>-1){
+                        clearInterval(iv);
+                        onFail('Payment failed or cancelled.');
+                    } else if(attempts>=MAX){
+                        clearInterval(iv);
+                        onFail('Still waiting for confirmation. If you completed the M-Pesa prompt, your balance will update shortly — check back or refresh.');
+                    }
+                }).catch(function(){
+                    if(attempts>=MAX){ clearInterval(iv); onFail('Still waiting for confirmation. If you completed the M-Pesa prompt, refresh in a bit.'); }
+                });
+            }).catch(function(){
+                if(attempts>=MAX){ clearInterval(iv); onFail('Network error checking status.'); }
+            });
         },5000);
     }
 
@@ -779,42 +804,28 @@
         if(!phone || !phone.match(/^0(7|1)[0-9]{8}$/)){ showToast('Valid M-Pesa number required (e.g. 0712345678)'); return; }
         if(isNaN(amount)||amount<50){ showToast('Minimum deposit KES 50'); return; }
         depositInFlight=true; showLoader(); showToast('Sending STK Push...');
+        var oldBalance = currentUser.balance;
         api('/api/deposit','POST',{amount:amount,phone_number:phone,api_ref:'AKIBA-DEP-'+currentUser.phone+'-'+Date.now()}).then(function(data){
             hideLoader(); showToast('Enter M-Pesa PIN on your phone...');
             document.getElementById('depositConfirmModal').style.display='flex';
-            pollPaymentStatus(data.checkoutRequestId, amount,
-                function(){
-                    document.getElementById('depositConfirmModal').style.display='none';
-                    showToast('Payment confirmed! Updating balance...');
-                    var oldBalance = currentUser.balance;
-                    var retries = 0;
-                    var MAX_RETRIES = 12;
-                    function refreshBal(){
-                        retries++;
-                        api('/api/user/'+currentUser.phone).then(function(u){
-                            if(u.balance > oldBalance){
-                                // Balance has updated — webhook has fired
-                                currentUser=u; saveSession(u); updateUIAfterChange();
-                                showToast('KES '+amount.toLocaleString()+' added to your balance!');
-                                depositInFlight=false; resetIdleTimer();
-                            } else if(retries < MAX_RETRIES){
-                                // Balance not updated yet — webhook still pending, try again
-                                setTimeout(refreshBal, 4000);
-                            } else {
-                                // Gave up waiting — still show latest data
-                                currentUser=u; saveSession(u); updateUIAfterChange();
-                                showToast('Payment received! Balance will update shortly.');
-                                depositInFlight=false;
-                            }
-                        }).catch(function(){
-                            if(retries < MAX_RETRIES) setTimeout(refreshBal, 4000);
-                            else { showToast('Payment received! Refresh to see balance.'); depositInFlight=false; }
-                        });
+            // Give the webhook a few seconds' head start before the first check
+            setTimeout(function(){
+                pollPaymentStatus(data.checkoutRequestId, amount, oldBalance,
+                    function(u){
+                        document.getElementById('depositConfirmModal').style.display='none';
+                        currentUser=u; saveSession(u); updateUIAfterChange();
+                        showToast('KES '+amount.toLocaleString()+' added to your balance!');
+                        depositInFlight=false; resetIdleTimer();
+                    },
+                    function(reason){
+                        document.getElementById('depositConfirmModal').style.display='none';
+                        showToast(reason);
+                        depositInFlight=false;
+                        // Still refresh in case the balance updates a moment later
+                        api('/api/user/'+currentUser.phone).then(function(u){ currentUser=u; saveSession(u); updateUIAfterChange(); }).catch(function(){});
                     }
-                    setTimeout(refreshBal, 5000);
-                },
-                function(reason){ document.getElementById('depositConfirmModal').style.display='none'; showToast(reason); depositInFlight=false; }
-            );
+                );
+            }, 5000);
         }).catch(function(e){ hideLoader(); depositInFlight=false; showToast(e.message); });
     }
 
