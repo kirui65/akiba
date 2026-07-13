@@ -5,8 +5,12 @@
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; font-src https://fonts.gstatic.com https://cdnjs.cloudflare.com; connect-src 'self'; img-src 'self' data:;">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=yes">
     <title>Akiba Wealth | Smart Investing</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" onload="this.onload=null;this.rel='stylesheet'">
+    <link rel="preload" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" onload="this.onload=null;this.rel='stylesheet'">
+    <noscript>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap">
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    </noscript>
     <style>
         * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
         :root {
@@ -127,16 +131,17 @@
         .bottom-nav-item.active { color:var(--green-primary); background:var(--green-soft); }
 
         /* Balance cards */
-        .balance-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:14px; margin-bottom:24px; }
-        .balance-card { background:var(--white); border-radius:var(--radius-lg); padding:20px; box-shadow:var(--shadow-sm); border:1px solid var(--border-light); transition:0.2s; }
-        .balance-card:hover { transform:translateY(-2px); box-shadow:var(--shadow-md); }
-        .balance-card.accent { background:linear-gradient(135deg,var(--green-deep),var(--green-primary)); border:none; }
-        .balance-card.accent .card-header { color:rgba(255,255,255,0.7); }
-        .balance-card.accent .balance-amount { color:#fff; font-size:32px; }
-        .balance-card.accent small { color:rgba(255,255,255,0.6); }
-        .card-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:4px; font-size:12px; color:var(--text-muted); font-weight:600; text-transform:uppercase; letter-spacing:0.04em; }
-        .balance-amount { font-size:26px; font-weight:700; margin:8px 0 4px; color:var(--text-dark); }
+        .balance-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:22px; }
+        .balance-grid .balance-card.accent { grid-column:1 / -1; }
+        .balance-card { background:var(--white); border-radius:var(--radius-lg); padding:18px 20px; border:1px solid var(--border-light); transition:0.2s; }
+        .balance-card.accent { background:linear-gradient(135deg,var(--green-deep),var(--green-primary)); border:none; padding:24px 26px; box-shadow:var(--shadow-md); }
+        .balance-card.accent .card-header { color:rgba(255,255,255,0.65); }
+        .balance-card.accent .balance-amount { color:#fff; font-size:36px; margin:6px 0 2px; }
+        .balance-card.accent small { color:rgba(255,255,255,0.55); }
+        .card-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:2px; font-size:11px; color:var(--text-muted); font-weight:600; text-transform:uppercase; letter-spacing:0.04em; }
+        .balance-amount { font-size:19px; font-weight:700; margin:6px 0 2px; color:var(--text-dark); font-family:'Space Grotesk',sans-serif; letter-spacing:-0.02em; }
         .mini-chart { width:100%; height:28px; margin-top:8px; opacity:0.6; }
+        @media (max-width:640px){ .balance-grid { grid-template-columns:1fr 1fr; } }
 
         /* Cards */
         .card { background:var(--white); border-radius:var(--radius-lg); padding:22px; border:1px solid var(--border-light); margin-bottom:18px; box-shadow:var(--shadow-sm); }
@@ -293,7 +298,7 @@
             <div class="feature-card">
                 <div class="feature-icon">📱</div>
                 <h4>Deposit via M-Pesa</h4>
-                <p>Add funds instantly using M-Pesa STK Push. Deposit KES 200 or more on your first deposit and get a KES 200 bonus!</p>
+                <p>Add funds instantly using M-Pesa STK Push. Deposit KES 75 or more on your first deposit and get a KES 75 bonus!</p>
             </div>
             <div class="feature-card">
                 <div class="feature-icon">📈</div>
@@ -543,8 +548,6 @@
         }
     }
 
-    function getWithdrawable(){ return currentUser ? Math.max(0, currentUser.balance-(currentUser.bonusAmount||0)) : 0; }
-
     function renderBalanceCards(){
         var bal = currentUser ? currentUser.balance : 0;
         var wd = getWithdrawable();
@@ -591,7 +594,7 @@
         document.getElementById('dynamicContent').innerHTML =
             activeInvHtml+
             '<div class="card"><h3><i class="fas fa-history"></i> Recent Activity</h3>'+(txHtml||emptyTx)+'</div>'+
-            '<div class="card"><h3><i class="fas fa-gift"></i> Bonus Info</h3><div class="bonus-grid"><span class="badge-pill">Welcome: KES 50</span><span class="badge-pill">First Deposit 200+: KES 200</span><span class="badge-pill">Referral: KES 50</span></div></div>';
+            '<div class="card"><h3><i class="fas fa-gift"></i> Bonus Info</h3><div class="bonus-grid"><span class="badge-pill">Welcome: KES 50</span><span class="badge-pill">First Deposit 75+: KES 75</span><span class="badge-pill">Referral: KES 50</span></div></div>';
     }
 
     function renderInvestTab(){
@@ -618,13 +621,12 @@
     function renderDepositTab(){
         if(!currentUser) return;
         document.getElementById('dynamicContent').innerHTML =
-            '<div class="card"><h3><i class="fas fa-mobile-alt"></i> M-Pesa Deposit <span class="badge-pill" style="margin-left:8px">First KES 200+ gets KES 200 bonus!</span></h3>'+
+            '<div class="card"><h3><i class="fas fa-mobile-alt"></i> M-Pesa Deposit <span class="badge-pill" style="margin-left:8px">First KES 75+ gets KES 75 bonus!</span></h3>'+
             '<div class="stk-hint"><i class="fas fa-info-circle"></i><p><strong>How it works:</strong> Enter your number and amount, then tap <em>Send STK Push</em>. Within 10 seconds your phone will vibrate with an M-Pesa PIN prompt. Enter your PIN to complete the deposit — do not close the app while waiting.</p></div>'+
             '<div class="form-group"><label>M-Pesa Number</label><input type="tel" id="depositPhone" placeholder="Enter M-Pesa Number"></div>'+
             '<div class="form-group"><label>Amount (KES)</label><input type="number" id="depositAmount" placeholder="Min KES 100"></div>'+
             '<div class="preset-group">'+
-            '<button class="preset-btn" onclick="setDeposit(100)">KES 100</button>'+
-            '<button class="preset-btn" onclick="setDeposit(200)">KES 200 🎁</button>'+
+            '<button class="preset-btn" onclick="setDeposit(100)">KES 100 🎁</button>'+
             '<button class="preset-btn" onclick="setDeposit(500)">KES 500</button>'+
             '<button class="preset-btn" onclick="setDeposit(1000)">KES 1,000</button>'+
             '</div>'+
@@ -648,12 +650,18 @@
         var refBonus = currentUser.referralBonus || 0;
         var refHistory = (currentUser.referralHistory || []);
         var historyHtml = refHistory.length ? refHistory.map(function(r){
-            return '<div class="transaction-item"><div class="transaction-left"><div class="tx-icon credit"><i class="fas fa-user-plus"></i></div><div><strong>'+escapeHTML(r.name)+'</strong><br><small>Deposited KES '+Number(r.amount).toLocaleString()+' · '+new Date(r.date).toLocaleDateString()+'</small></div></div><span class="badge-pill">+KES 50</span></div>';
+            var earned = r.status === 'bonus earned';
+            var maskedPhone = r.phone ? (String(r.phone).slice(0,4)+'****'+String(r.phone).slice(-2)) : '';
+            var subtitle = earned
+                ? ('Deposited KES '+Number(r.amount||0).toLocaleString()+' · '+new Date(r.date).toLocaleDateString())
+                : ('Joined '+new Date(r.date).toLocaleDateString()+' · '+maskedPhone+' · awaiting first deposit');
+            var badge = earned ? '<span class="badge-pill">+KES 50</span>' : '<span class="badge-pill" style="background:var(--border-light);color:var(--text-muted)">Pending</span>';
+            return '<div class="transaction-item"><div class="transaction-left"><div class="tx-icon credit"><i class="fas fa-user-plus"></i></div><div><strong>'+escapeHTML(r.name||'Friend')+'</strong><br><small>'+subtitle+'</small></div></div>'+badge+'</div>';
         }).join('') : '<p style="color:var(--text-muted);font-size:13px;padding:8px 0">No referrals yet. Share your link to start earning!</p>';
 
         document.getElementById('dynamicContent').innerHTML =
             '<div class="card"><h3><i class="fas fa-users"></i> Invite & Earn</h3>'+
-            '<p style="font-size:14px;color:var(--text-muted);margin-bottom:16px;line-height:1.6">Share your link. When your friend signs up and deposits <strong style="color:var(--green-primary)">KES 200+</strong>, you earn <strong style="color:var(--green-primary)">KES 50 bonus</strong> instantly.</p>'+
+            '<p style="font-size:14px;color:var(--text-muted);margin-bottom:16px;line-height:1.6">Share your link. When your friend signs up and deposits <strong style="color:var(--green-primary)">KES 75+</strong>, you earn <strong style="color:var(--green-primary)">KES 50 bonus</strong> instantly.</p>'+
             '<div class="form-group"><label>Your Invite Link</label><div style="display:flex;gap:8px;align-items:center"><input type="text" id="refLinkInput" value="'+escapeHTML(refLink)+'" readonly style="flex:1;font-size:12px"><button class="btn-primary" style="white-space:nowrap" onclick="copyRefLink()"><i class="fas fa-copy"></i> Copy</button></div></div>'+
             '<div style="display:flex;gap:8px;margin-top:4px">'+
             '<button class="btn-outline" style="flex:1" onclick="shareWhatsApp()"><i class="fab fa-whatsapp"></i> WhatsApp</button>'+
@@ -912,6 +920,11 @@
             btn.classList.add('active');
             activeNav=btn.getAttribute('data-nav');
             renderActiveNav(); resetIdleTimer();
+            // Refresh silently in the background — keeps referral counts, balance, and
+            // history current without the user needing to reload the page.
+            if(currentUser){
+                api('/api/user/'+currentUser.phone).then(function(u){ currentUser=u; saveSession(u); updateUIAfterChange(); }).catch(function(){});
+            }
         });
     });
 
