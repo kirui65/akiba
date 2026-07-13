@@ -69,6 +69,23 @@ app.post('/api/signup', async (req, res) => {
         createdAt: Date.now()
     };
     await saveUser(phone, newUser);
+
+    // Record the join against the inviter right away, so they can see who used their
+    // link even before that person makes their first deposit. This entry gets updated
+    // (not duplicated) once the referral bonus is actually earned.
+    if (referredBy) {
+        const inviter = await getUser(referredBy);
+        if (inviter) {
+            await saveUser(referredBy, {
+                totalReferrals: (inviter.totalReferrals || 0) + 1,
+                referralHistory: [
+                    { phone, name, status: 'joined', amount: 0, date: Date.now() },
+                    ...(inviter.referralHistory || [])
+                ]
+            });
+        }
+    }
+
     res.json({ success: true, message: 'Account created! KES 50 bonus added.' });
 });
 
@@ -269,7 +286,7 @@ app.post('/api/callback', async (req, res) => {
             }
             if (user) {
                 const isFirstDeposit = !user.firstDepositBonusGiven;
-                const firstDepositBonus = (isFirstDeposit && amount >= 200) ? 200 : 0;
+                const firstDepositBonus = (isFirstDeposit && amount >= 75) ? 75 : 0;
                 const txNote = `📥 Deposited KES ${amount.toLocaleString()} via M-Pesa${firstDepositBonus ? ` + KES ${firstDepositBonus} first deposit bonus` : ''}`;
 
                 let updatedUser = {
@@ -280,19 +297,25 @@ app.post('/api/callback', async (req, res) => {
                     transactionHistory: [txNote, ...(user.transactionHistory || [])].slice(0, 100)
                 };
 
-                // Referral bonus: credit inviter KES 50 on first deposit >= 200
-                if (!user.referralBonusPaid && user.referredBy && amount >= 200) {
+                // Referral bonus: credit inviter KES 50 once their friend's first deposit clears KES 75.
+                // The "joined" entry for this person was already recorded on the inviter's side at
+                // signup — we update that same entry here instead of adding a second one.
+                if (!user.referralBonusPaid && user.referredBy && amount >= 75) {
                     updatedUser.referralBonusPaid = true;
-                    updatedUser.referredBy = user.referredBy;
                     const inviter = await getUser(user.referredBy);
                     if (inviter) {
                         const REFERRAL_BONUS = 50;
+                        const updatedHistory = (inviter.referralHistory || []).map(function(entry) {
+                            if (entry.phone === phone && entry.status === 'joined') {
+                                return { ...entry, status: 'bonus earned', amount, date: Date.now() };
+                            }
+                            return entry;
+                        });
                         await saveUser(user.referredBy, {
                             balance: inviter.balance + REFERRAL_BONUS,
                             bonusAmount: (inviter.bonusAmount || 0) + REFERRAL_BONUS,
                             referralBonus: (inviter.referralBonus || 0) + REFERRAL_BONUS,
-                            totalReferrals: (inviter.totalReferrals || 0) + 1,
-                            referralHistory: [{ name: user.name, phone: phone.slice(0, 4) + '****' + phone.slice(-2), amount, date: Date.now() }, ...(inviter.referralHistory || [])],
+                            referralHistory: updatedHistory,
                             transactionHistory: [`🤝 Referral bonus +KES ${REFERRAL_BONUS} — ${user.name} deposited!`, ...(inviter.transactionHistory || [])].slice(0, 100)
                         });
                     }
