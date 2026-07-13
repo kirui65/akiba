@@ -258,8 +258,15 @@ app.post('/api/callback', async (req, res) => {
         const phone = parts?.[2];
         const amount = Number(payload.amount);
 
+        if (!phone) {
+            console.error('Callback: could not extract phone from api_ref:', payload.api_ref);
+        }
+
         if (phone) {
             const user = await getUser(phone);
+            if (!user) {
+                console.error('Callback: no user found for phone:', phone);
+            }
             if (user) {
                 const isFirstDeposit = !user.firstDepositBonusGiven;
                 const firstDepositBonus = (isFirstDeposit && amount >= 200) ? 200 : 0;
