@@ -169,13 +169,15 @@ app.post('/api/forgot-password', async (req, res) => {
     const code = String(Math.floor(100000 + Math.random() * 900000)); // 6 digits
     await saveUser(phone, { resetCode: code, resetCodeExpiry: Date.now() + 15 * 60 * 1000 });
 
-    try {
-        await sendResetCodeEmail(user.email, code, user.name);
-    } catch (err) {
-        console.error('Failed to send reset email:', err);
-        return res.status(502).json({ error: 'Could not send reset email right now. Try again shortly.' });
-    }
+    // Respond immediately — don't make the user wait on the Gmail SMTP round trip
+    // (typically 0.5–2s). The code is already saved, so the send is fire-and-forget;
+    // any failure is only logged server-side, since we already give a generic
+    // response either way (to avoid revealing whether the account/email exists).
     res.json(generic);
+
+    sendResetCodeEmail(user.email, code, user.name).catch(err => {
+        console.error('Failed to send reset email:', err);
+    });
 });
 
 // ── AUTH: Reset password with emailed code ────────────────────────────────────
