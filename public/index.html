@@ -432,6 +432,13 @@
                     </div>
                 </div>
                 <div class="auth-input-group">
+                    <label>Email <span style="text-transform:none;font-weight:400;">(for password recovery)</span></label>
+                    <div class="auth-input-wrap">
+                        <i class="fas fa-envelope"></i>
+                        <input type="email" id="signupEmail" placeholder="you@example.com">
+                    </div>
+                </div>
+                <div class="auth-input-group">
                     <label>Referral Code <span style="text-transform:none;font-weight:400;">(optional)</span></label>
                     <div class="auth-input-wrap">
                         <i class="fas fa-tag"></i>
@@ -455,22 +462,33 @@
 <div id="resetModal" class="modal">
     <div class="reset-modal-box">
         <h3><i class="fas fa-key" style="color:var(--green-primary);margin-right:8px;"></i> Reset Password</h3>
-        <div class="auth-input-group">
-            <label>M-Pesa Number</label>
-            <input type="tel" id="resetPhone" placeholder="e.g. 0712345678 or 0112345678" style="width:100%;padding:12px 16px;border:1.5px solid var(--border-light);border-radius:12px;font-size:14px;font-family:'Inter',sans-serif;outline:none;background:var(--bg-page);">
+
+        <div id="resetStep1">
+            <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px;">Enter your M-Pesa number. If your account has an email on file, we'll send a 6-digit code there.</p>
+            <div class="auth-input-group">
+                <label>M-Pesa Number</label>
+                <input type="tel" id="resetPhone" placeholder="e.g. 0712345678 or 0112345678" style="width:100%;padding:12px 16px;border:1.5px solid var(--border-light);border-radius:12px;font-size:14px;font-family:'Inter',sans-serif;outline:none;background:var(--bg-page);">
+            </div>
+            <div id="resetError" class="error-msg"></div>
+            <button class="auth-btn-main" onclick="handleForgotPassword()" style="margin-top:4px;">Send Reset Code</button>
+            <button onclick="closeResetModal()" style="width:100%;margin-top:10px;background:none;border:none;cursor:pointer;font-size:13px;color:var(--text-muted);font-family:'Inter',sans-serif;">Cancel</button>
         </div>
-        <div class="auth-input-group">
-            <label>Last 4 digits of your number (PIN)</label>
-            <input type="text" id="resetPIN" placeholder="e.g. 5678" maxlength="4" style="width:100%;padding:12px 16px;border:1.5px solid var(--border-light);border-radius:12px;font-size:14px;letter-spacing:6px;font-family:'Inter',sans-serif;outline:none;background:var(--bg-page);">
+
+        <div id="resetStep2" style="display:none;">
+            <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px;">Enter the 6-digit code we emailed you, plus your new password. Codes expire after 15 minutes.</p>
+            <div class="auth-input-group">
+                <label>6-Digit Code</label>
+                <input type="text" id="resetCode" placeholder="e.g. 482913" maxlength="6" style="width:100%;padding:12px 16px;border:1.5px solid var(--border-light);border-radius:12px;font-size:14px;letter-spacing:6px;font-family:'Inter',sans-serif;outline:none;background:var(--bg-page);">
+            </div>
+            <div class="auth-input-group">
+                <label>New Password</label>
+                <input type="password" id="resetNewPassword" placeholder="New password (min 6 chars)" style="width:100%;padding:12px 16px;border:1.5px solid var(--border-light);border-radius:12px;font-size:14px;font-family:'Inter',sans-serif;outline:none;background:var(--bg-page);">
+            </div>
+            <div id="resetError2" class="error-msg"></div>
+            <div id="resetSuccess" class="success-msg"></div>
+            <button class="auth-btn-main" onclick="handleResetPassword()" style="margin-top:4px;">Reset Password</button>
+            <button onclick="closeResetModal()" style="width:100%;margin-top:10px;background:none;border:none;cursor:pointer;font-size:13px;color:var(--text-muted);font-family:'Inter',sans-serif;">Cancel</button>
         </div>
-        <div class="auth-input-group">
-            <label>New Password</label>
-            <input type="password" id="resetNewPassword" placeholder="New password (min 6 chars)" style="width:100%;padding:12px 16px;border:1.5px solid var(--border-light);border-radius:12px;font-size:14px;font-family:'Inter',sans-serif;outline:none;background:var(--bg-page);">
-        </div>
-        <div id="resetError" class="error-msg"></div>
-        <div id="resetSuccess" class="success-msg"></div>
-        <button class="auth-btn-main" onclick="handleResetPassword()" style="margin-top:4px;">Reset Password</button>
-        <button onclick="closeResetModal()" style="width:100%;margin-top:10px;background:none;border:none;cursor:pointer;font-size:13px;color:var(--text-muted);font-family:'Inter',sans-serif;">Cancel</button>
     </div>
 </div>
 
@@ -516,6 +534,7 @@
     const INVESTMENT_RULES = {300:400,800:1200,1000:1600,2000:3000,5000:6500,10000:15000,20000:30000};
     let activeNav = 'dashboard';
     let depositInFlight = false;
+    let resetPhoneForCode = null;
 
     function escapeHTML(s){ let d=document.createElement('div'); d.appendChild(document.createTextNode(String(s))); return d.innerHTML; }
     function showToast(msg){ let e=document.querySelector('.toast-message'); if(e)e.remove(); let t=document.createElement('div'); t.className='toast-message'; t.textContent=msg; document.body.appendChild(t); setTimeout(()=>t.remove(),3500); }
@@ -684,9 +703,11 @@
 
     function renderSettingsTab(){
         if(!currentUser) return;
+        var emailNote = currentUser.email ? '' : '<small style="color:#D97706;display:block;margin-top:4px">Add an email so you can recover your password if you forget it.</small>';
         document.getElementById('dynamicContent').innerHTML =
             '<div class="card"><h3><i class="fas fa-user-edit"></i> Profile</h3>'+
             '<div class="form-group"><label>Full Name</label><input type="text" id="profileName" value="'+escapeHTML(currentUser.name||'')+'" placeholder="Full name"></div>'+
+            '<div class="form-group"><label>Email</label><input type="email" id="profileEmail" value="'+escapeHTML(currentUser.email||'')+'" placeholder="you@example.com">'+emailNote+'</div>'+
             '<button class="btn-outline" onclick="updateProfile()"><i class="fas fa-save"></i> Save Changes</button></div>'+
             '<div class="card"><h3><i class="fas fa-key"></i> Change Password</h3>'+
             '<div class="form-group"><input type="password" id="currentPass" placeholder="Current password"></div>'+
@@ -694,7 +715,7 @@
             '<div class="form-group"><input type="password" id="confirmPass" placeholder="Confirm new password"></div>'+
             '<button class="btn-primary" onclick="changePassword()"><i class="fas fa-lock"></i> Update Password</button></div>'+
             '<div class="card"><h3><i class="fas fa-shield-alt"></i> Security</h3>'+
-            '<button class="btn-outline" onclick="openResetPasswordModal()"><i class="fas fa-key"></i> Reset Password via Phone</button>&nbsp;'+
+            '<button class="btn-outline" onclick="openResetPasswordModal()"><i class="fas fa-key"></i> Reset Password via Email</button>&nbsp;'+
             '<button class="btn-outline" onclick="manualLogout()"><i class="fas fa-sign-out-alt"></i> Logout</button></div>'+
             '<div class="card"><h3><i class="fas fa-adjust"></i> Appearance</h3>'+
             '<button class="btn-outline" onclick="toggleDarkMode()"><i class="fas fa-moon"></i> Toggle Dark Mode</button></div>';
@@ -719,16 +740,18 @@
         var name=document.getElementById('signupName').value.trim();
         var phone=document.getElementById('signupPhone').value.trim();
         var pwd=document.getElementById('signupPassword').value;
+        var email=document.getElementById('signupEmail').value.trim();
         var ref=document.getElementById('signupRefCode').value.trim().toUpperCase();
-        if(!name||!phone||!pwd){ document.getElementById('signupError').innerText='Fill all fields'; return; }
+        if(!name||!phone||!pwd||!email){ document.getElementById('signupError').innerText='Fill all fields'; return; }
         if(!phone.match(/^0(7|1)[0-9]{8}$/)){ document.getElementById('signupError').innerText='Valid M-Pesa number required (e.g. 0712345678)'; return; }
+        if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ document.getElementById('signupError').innerText='Valid email required for password recovery'; return; }
         if(pwd.length<6){ document.getElementById('signupError').innerText='Password min 6 chars'; return; }
         document.getElementById('signupError').innerText='';
         showLoader();
-        api('/api/signup','POST',{name:name,phone:phone,password:pwd,refCode:ref}).then(function(){
+        api('/api/signup','POST',{name:name,phone:phone,password:pwd,email:email,refCode:ref}).then(function(){
             hideLoader(); showToast('Account created! KES 50 bonus added. Please login.');
             switchAuthMode('login');
-            ['signupName','signupPhone','signupPassword','signupRefCode'].forEach(function(id){ document.getElementById(id).value=''; });
+            ['signupName','signupPhone','signupPassword','signupEmail','signupRefCode'].forEach(function(id){ document.getElementById(id).value=''; });
         }).catch(function(e){ hideLoader(); document.getElementById('signupError').innerText=e.message; });
     }
 
@@ -752,14 +775,29 @@
         }).catch(function(e){ hideLoader(); document.getElementById('loginError').innerText=e.message; });
     }
 
-    function handleResetPassword(){
+    function handleForgotPassword(){
         var phone=document.getElementById('resetPhone').value.trim();
-        var pin=document.getElementById('resetPIN').value.trim();
-        var np=document.getElementById('resetNewPassword').value;
-        if(!phone||!pin||!np){ document.getElementById('resetError').innerText='All fields required'; return; }
-        api('/api/reset-password','POST',{phone:phone,pin:pin,newPassword:np}).then(function(){
-            showToast('Password reset! Please login.'); closeResetModal();
+        document.getElementById('resetError').innerText='';
+        if(!phone.match(/^0(7|1)[0-9]{8}$/)){ document.getElementById('resetError').innerText='Valid M-Pesa number required'; return; }
+        api('/api/forgot-password','POST',{phone:phone}).then(function(data){
+            resetPhoneForCode = phone;
+            document.getElementById('resetStep1').style.display='none';
+            document.getElementById('resetStep2').style.display='block';
+            showToast(data.message || 'Code sent to your email');
         }).catch(function(e){ document.getElementById('resetError').innerText=e.message; });
+    }
+
+    function handleResetPassword(){
+        var code=document.getElementById('resetCode').value.trim();
+        var np=document.getElementById('resetNewPassword').value;
+        document.getElementById('resetError2').innerText='';
+        if(!code||!np){ document.getElementById('resetError2').innerText='All fields required'; return; }
+        if(np.length<6){ document.getElementById('resetError2').innerText='Password min 6 chars'; return; }
+        api('/api/reset-password','POST',{phone:resetPhoneForCode,code:code,newPassword:np}).then(function(){
+            document.getElementById('resetSuccess').innerText='Password reset! Please login.';
+            showToast('Password reset! Please login.');
+            setTimeout(closeResetModal, 1200);
+        }).catch(function(e){ document.getElementById('resetError2').innerText=e.message; });
     }
 
     // ── Invest ────────────────────────────────────────────────────────────────
@@ -868,9 +906,11 @@
     function updateProfile(){
         if(!currentUser) return;
         var name=document.getElementById('profileName') && document.getElementById('profileName').value.trim();
+        var email=document.getElementById('profileEmail') && document.getElementById('profileEmail').value.trim();
         if(!name){ showToast('Enter name'); return; }
-        api('/api/update-profile','POST',{phone:currentUser.phone,name:name}).then(function(){
-            currentUser.name=name; saveSession(currentUser);
+        if(email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ showToast('Enter a valid email'); return; }
+        api('/api/update-profile','POST',{phone:currentUser.phone,name:name,email:email}).then(function(){
+            currentUser.name=name; currentUser.email=email; saveSession(currentUser);
             updateAvatarAndGreeting(); showToast('Profile updated'); resetIdleTimer();
         }).catch(function(e){ showToast(e.message); });
     }
@@ -914,7 +954,17 @@
     function openAuthModal(m){ document.getElementById('login-form').style.display=m==='login'?'block':'none'; document.getElementById('signup-form').style.display=m==='signup'?'block':'none'; document.getElementById('loginError').innerText=''; document.getElementById('signupError').innerText=''; document.getElementById('authModal').style.display='flex'; }
     function closeAuthModal(){ document.getElementById('authModal').style.display='none'; }
     function switchAuthMode(m){ document.getElementById('login-form').style.display=m==='login'?'block':'none'; document.getElementById('signup-form').style.display=m==='signup'?'block':'none'; }
-    function openResetPasswordModal(){ document.getElementById('resetError').innerText=''; document.getElementById('resetModal').style.display='flex'; }
+    function openResetPasswordModal(){
+        document.getElementById('resetError').innerText='';
+        document.getElementById('resetError2').innerText='';
+        document.getElementById('resetSuccess').innerText='';
+        document.getElementById('resetStep1').style.display='block';
+        document.getElementById('resetStep2').style.display='none';
+        document.getElementById('resetPhone').value='';
+        document.getElementById('resetCode').value='';
+        document.getElementById('resetNewPassword').value='';
+        document.getElementById('resetModal').style.display='flex';
+    }
     function closeResetModal(){ document.getElementById('resetModal').style.display='none'; }
     function manualLogout(){ currentUser=null; clearSession(); document.getElementById('dashboard-app').classList.remove('active'); document.getElementById('landing-page').classList.add('active'); document.getElementById('bottomNav').style.display='none'; document.getElementById('guestNav').style.display='flex'; document.getElementById('userNav').style.display='none'; showToast('Logged out'); clearTimeout(idleTimer); }
     function navigateToLanding(){ if(!currentUser){ document.getElementById('dashboard-app').classList.remove('active'); document.getElementById('landing-page').classList.add('active'); } }
