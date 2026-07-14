@@ -1,5 +1,6 @@
 const express = require('express');
 const path = require('path');
+const crypto = require('crypto');
 const admin = require('firebase-admin');
 
 // ── Firebase init ─────────────────────────────────────────────────────────────
@@ -23,6 +24,30 @@ async function getUser(phone) {
 }
 async function saveUser(phone, data) {
     await db.collection('users').doc(phone).set(data, { merge: true });
+}
+
+// ── Helper: session tokens ─────────────────────────────────────────────────────
+// Every user gets a random session token on signup/login. The client stores it and
+// sends it back on every request via the X-Auth-Token header. Any endpoint that reads
+// or changes one specific person's data must confirm that header matches the token on
+// file for that phone — otherwise one user's balance, history, and referral data would
+// be readable (and in a couple of cases, spendable) by anyone who knows their number.
+function genToken() {
+    return crypto.randomBytes(24).toString('hex');
+}
+function stripPrivate(user) {
+    const { password, authToken, ...safe } = user;
+    return safe;
+}
+async function requireAuth(req, res, phone) {
+    const header = req.headers['authorization'] || '';
+    const token = header.startsWith('Bearer ') ? header.slice(7) : null;
+    const user = await getUser(phone);
+    if (!user || !token || user.authToken !== token) {
+        res.status(401).json({ error: 'Session expired. Please log in again.' });
+        return null;
+    }
+    return user;
 }
 
 // ── AUTH: Signup ──────────────────────────────────────────────────────────────
@@ -52,9 +77,10 @@ app.post('/api/signup', async (req, res) => {
     let h = 0;
     for (let i = 0; i < phone.length; i++) h = Math.imul(31, h) + phone.charCodeAt(i) | 0;
     const inviteCode = 'AK' + Math.abs(h).toString(36).toUpperCase().padStart(6, '0').slice(0, 6);
+    const authToken = genToken();
 
     const newUser = {
-        name, phone, password, inviteCode,
+        name, phone, password, inviteCode, authToken,
         balance: 50,
         bonusAmount: 50,
         activeInvestment: null,
@@ -95,9 +121,9 @@ app.post('/api/login', async (req, res) => {
     if (!phone || !password) return res.status(400).json({ error: 'Enter phone and password' });
     const user = await getUser(phone);
     if (!user || user.password !== password) return res.status(401).json({ error: 'Invalid phone or password' });
-    // Return user without password
-    const { password: _, ...safeUser } = user;
-    res.json({ success: true, user: safeUser });
+    const token = genToken();
+    await saveUser(phone, { authToken: token });
+    res.json({ success: true, user: stripPrivate({ ...user, authToken: token }), token });
 });
 
 // ── AUTH: Reset Password ──────────────────────────────────────────────────────
@@ -115,17 +141,16 @@ app.post('/api/reset-password', async (req, res) => {
 
 // ── USER: Get current user data ───────────────────────────────────────────────
 app.get('/api/user/:phone', async (req, res) => {
-    const user = await getUser(req.params.phone);
-    if (!user) return res.status(404).json({ error: 'User not found' });
-    const { password: _, ...safeUser } = user;
-    res.json(safeUser);
+    const user = await requireAuth(req, res, req.params.phone);
+    if (!user) return; // requireAuth already sent the 401 response
+    res.json(stripPrivate(user));
 });
 
 // ── USER: Update profile ──────────────────────────────────────────────────────
 app.post('/api/update-profile', async (req, res) => {
     const { phone, name } = req.body;
-    const user = await getUser(phone);
-    if (!user) return res.status(404).json({ error: 'User not found' });
+    const user = await requireAuth(req, res, phone);
+    if (!user) return;
     await saveUser(phone, { name });
     res.json({ success: true });
 });
@@ -133,8 +158,8 @@ app.post('/api/update-profile', async (req, res) => {
 // ── USER: Change password ─────────────────────────────────────────────────────
 app.post('/api/change-password', async (req, res) => {
     const { phone, currentPassword, newPassword } = req.body;
-    const user = await getUser(phone);
-    if (!user) return res.status(404).json({ error: 'User not found' });
+    const user = await requireAuth(req, res, phone);
+    if (!user) return;
     if (user.password !== currentPassword) return res.status(401).json({ error: 'Current password incorrect' });
     if (newPassword.length < 6) return res.status(400).json({ error: 'Password min 6 chars' });
     await saveUser(phone, { password: newPassword });
@@ -148,8 +173,8 @@ app.post('/api/invest', async (req, res) => {
     const returnAmount = RULES[Number(amount)];
     if (!returnAmount) return res.status(400).json({ error: 'Invalid plan amount' });
 
-    const user = await getUser(phone);
-    if (!user) return res.status(404).json({ error: 'User not found' });
+    const user = await requireAuth(req, res, phone);
+    if (!user) return;
     if (user.balance < amount) return res.status(400).json({ error: 'Insufficient balance' });
     if (user.activeInvestment) return res.status(400).json({ error: 'You have an active investment. Wait for maturity.' });
 
@@ -160,16 +185,15 @@ app.post('/api/invest', async (req, res) => {
         transactionHistory: [`📈 Invested KES ${Number(amount).toLocaleString()} → returns KES ${returnAmount.toLocaleString()} after 7 days`, ...(user.transactionHistory || [])].slice(0, 100)
     };
     await saveUser(phone, updatedUser);
-    const { password: _, ...safeUser } = updatedUser;
-    res.json({ success: true, user: safeUser });
+    res.json({ success: true, user: stripPrivate(updatedUser) });
 });
 
 // ── CHECK MATURED INVESTMENT ──────────────────────────────────────────────────
 app.post('/api/check-matured', async (req, res) => {
     const { phone } = req.body;
-    const user = await getUser(phone);
-    if (!user) return res.status(404).json({ error: 'User not found' });
-    if (!user.activeInvestment) return res.json({ matured: false, user: user });
+    const user = await requireAuth(req, res, phone);
+    if (!user) return;
+    if (!user.activeInvestment) return res.json({ matured: false, user: stripPrivate(user) });
 
     const elapsed = Date.now() - user.activeInvestment.startDate;
     const sevenDays = 7 * 24 * 60 * 60 * 1000;
@@ -185,8 +209,7 @@ app.post('/api/check-matured', async (req, res) => {
         transactionHistory: [`💰 Investment matured! +KES ${returnAmount.toLocaleString()} (profit: KES ${profit.toLocaleString()})`, ...(user.transactionHistory || [])].slice(0, 100)
     };
     await saveUser(phone, updatedUser);
-    const { password: _, ...safeUser } = updatedUser;
-    res.json({ matured: true, user: safeUser });
+    res.json({ matured: true, user: stripPrivate(updatedUser) });
 });
 
 // ── WITHDRAW (manual — admin approves) ───────────────────────────────────────
@@ -194,8 +217,8 @@ app.post('/api/withdraw', async (req, res) => {
     const { phone, amount, withdrawPhone } = req.body;
     const MIN = 200;
     if (!amount || Number(amount) < MIN) return res.status(400).json({ error: `Minimum withdrawal is KES ${MIN}` });
-    const user = await getUser(phone);
-    if (!user) return res.status(404).json({ error: 'User not found' });
+    const user = await requireAuth(req, res, phone);
+    if (!user) return;
 
     const withdrawable = user.balance - (user.bonusAmount || 0);
     if (withdrawable < Number(amount)) return res.status(400).json({ error: `Insufficient withdrawable balance. Available: KES ${withdrawable}` });
@@ -211,16 +234,20 @@ app.post('/api/withdraw', async (req, res) => {
         status: 'pending', requestedAt: Date.now()
     });
     await saveUser(phone, updatedUser);
-    const { password: _, ...safeUser } = updatedUser;
-    res.json({ success: true, user: safeUser, message: 'Withdrawal request submitted. Processing within 24 hours.' });
+    res.json({ success: true, user: stripPrivate(updatedUser), message: 'Withdrawal request submitted. Processing within 24 hours.' });
 });
 
 // ── DEPOSIT: Trigger Lipwa STK push ──────────────────────────────────────────
 app.post('/api/deposit', async (req, res) => {
-    const { amount, phone_number, api_ref } = req.body;
+    const { phone, amount, phone_number } = req.body;
     if (!amount || isNaN(amount) || Number(amount) < 100) return res.status(400).json({ error: 'Minimum deposit is KES 100.' });
     if (!phone_number || !/^(07|01|254)\d{8,9}$/.test(String(phone_number).replace('+', ''))) return res.status(400).json({ error: 'Invalid phone number.' });
-    if (!api_ref || typeof api_ref !== 'string' || api_ref.length > 64) return res.status(400).json({ error: 'Invalid api_ref.' });
+
+    const user = await requireAuth(req, res, phone);
+    if (!user) return;
+    // Built server-side (not trusted from the client) so the account that gets
+    // credited is always the account whose session token was just verified above.
+    const api_ref = `AKIBA-DEP-${phone}-${Date.now()}`;
 
     const LIPWA_KEY     = process.env.LIPWA_API_KEY;
     const LIPWA_CHANNEL = process.env.LIPWA_CHANNEL_ID;
@@ -286,8 +313,9 @@ app.post('/api/callback', async (req, res) => {
             }
             if (user) {
                 const isFirstDeposit = !user.firstDepositBonusGiven;
-                const firstDepositBonus = (isFirstDeposit && amount >= 75) ? 75 : 0;
-                const txNote = `📥 Deposited KES ${amount.toLocaleString()} via M-Pesa${firstDepositBonus ? ` + KES ${firstDepositBonus} first deposit bonus` : ''}`;
+                const firstDepositBonus = (isFirstDeposit && amount >= 200) ? 75 : 0;
+                const mpesaCode = payload.mpesa_code || null;
+                const txNote = `📥 Deposited KES ${amount.toLocaleString()} via M-Pesa${mpesaCode ? ` (${mpesaCode})` : ''}${firstDepositBonus ? ` + KES ${firstDepositBonus} first deposit bonus` : ''}`;
 
                 let updatedUser = {
                     ...user,
@@ -300,7 +328,7 @@ app.post('/api/callback', async (req, res) => {
                 // Referral bonus: credit inviter KES 50 once their friend's first deposit clears KES 75.
                 // The "joined" entry for this person was already recorded on the inviter's side at
                 // signup — we update that same entry here instead of adding a second one.
-                if (!user.referralBonusPaid && user.referredBy && amount >= 75) {
+                if (!user.referralBonusPaid && user.referredBy && amount >= 200) {
                     updatedUser.referralBonusPaid = true;
                     const inviter = await getUser(user.referredBy);
                     if (inviter) {
