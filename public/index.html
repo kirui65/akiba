@@ -298,7 +298,7 @@
             <div class="feature-card">
                 <div class="feature-icon">📱</div>
                 <h4>Deposit via M-Pesa</h4>
-                <p>Add funds instantly using M-Pesa STK Push. Deposit KES 75 or more on your first deposit and get a KES 75 bonus!</p>
+                <p>Add funds instantly using M-Pesa STK Push. Deposit KES 200 or more on your first deposit and get a KES 75 bonus!</p>
             </div>
             <div class="feature-card">
                 <div class="feature-icon">📈</div>
@@ -511,6 +511,7 @@
 
 <script>
     let currentUser = null;
+    let authToken = null;
     let idleTimer;
     const INVESTMENT_RULES = {300:400,800:1200,1000:1600,2000:3000,5000:6500,10000:15000,20000:30000};
     let activeNav = 'dashboard';
@@ -522,18 +523,25 @@
     function hideLoader(){ document.getElementById('globalLoader').classList.remove('active'); }
     function getInviteCode(phone){ let h=0; for(let i=0;i<phone.length;i++) h=Math.imul(31,h)+phone.charCodeAt(i)|0; return 'AK'+Math.abs(h).toString(36).toUpperCase().padStart(6,'0').slice(0,6); }
     function getInviteLink(phone){ return window.location.origin + window.location.pathname + '?ref=' + getInviteCode(phone); }
-    function saveSession(u){ sessionStorage.setItem('akiba_user',JSON.stringify(u)); }
-    function clearSession(){ sessionStorage.removeItem('akiba_user'); }
+    function saveSession(u,t){ sessionStorage.setItem('akiba_user',JSON.stringify(u)); if(t){ authToken=t; sessionStorage.setItem('akiba_token',t); } }
+    function clearSession(){ sessionStorage.removeItem('akiba_user'); sessionStorage.removeItem('akiba_token'); authToken=null; }
     function getWithdrawable(){ return currentUser ? Math.max(0, currentUser.balance-(currentUser.bonusAmount||0)) : 0; }
 
     // ── Real API call to your server ──────────────────────────────────────────
+    // Every call carries the session token (once logged in) so the server can
+    // verify you're only ever reading or changing your own account.
     function api(path, method, body){
         method = method || 'GET';
-        var opts = { method:method, headers:{'Content-Type':'application/json'} };
+        var headers = {'Content-Type':'application/json'};
+        if(authToken) headers['Authorization'] = 'Bearer ' + authToken;
+        var opts = { method:method, headers:headers };
         if(body) opts.body = JSON.stringify(body);
         return fetch(path, opts).then(function(res){
             return res.json().then(function(data){
-                if(!res.ok) throw new Error(data.error || 'Request failed');
+                if(!res.ok){
+                    if(res.status===401){ currentUser=null; clearSession(); showToast('Session expired. Please log in again.'); }
+                    throw new Error(data.error || 'Request failed');
+                }
                 return data;
             });
         });
@@ -594,7 +602,7 @@
         document.getElementById('dynamicContent').innerHTML =
             activeInvHtml+
             '<div class="card"><h3><i class="fas fa-history"></i> Recent Activity</h3>'+(txHtml||emptyTx)+'</div>'+
-            '<div class="card"><h3><i class="fas fa-gift"></i> Bonus Info</h3><div class="bonus-grid"><span class="badge-pill">Welcome: KES 50</span><span class="badge-pill">First Deposit 75+: KES 75</span><span class="badge-pill">Referral: KES 50</span></div></div>';
+            '<div class="card"><h3><i class="fas fa-gift"></i> Bonus Info</h3><div class="bonus-grid"><span class="badge-pill">Welcome: KES 50</span><span class="badge-pill">First Deposit 200+: KES 75</span><span class="badge-pill">Referral: KES 50</span></div></div>';
     }
 
     function renderInvestTab(){
@@ -621,12 +629,13 @@
     function renderDepositTab(){
         if(!currentUser) return;
         document.getElementById('dynamicContent').innerHTML =
-            '<div class="card"><h3><i class="fas fa-mobile-alt"></i> M-Pesa Deposit <span class="badge-pill" style="margin-left:8px">First KES 75+ gets KES 75 bonus!</span></h3>'+
+            '<div class="card"><h3><i class="fas fa-mobile-alt"></i> M-Pesa Deposit <span class="badge-pill" style="margin-left:8px">First KES 200+ gets KES 75 bonus!</span></h3>'+
             '<div class="stk-hint"><i class="fas fa-info-circle"></i><p><strong>How it works:</strong> Enter your number and amount, then tap <em>Send STK Push</em>. Within 10 seconds your phone will vibrate with an M-Pesa PIN prompt. Enter your PIN to complete the deposit — do not close the app while waiting.</p></div>'+
             '<div class="form-group"><label>M-Pesa Number</label><input type="tel" id="depositPhone" placeholder="Enter M-Pesa Number"></div>'+
             '<div class="form-group"><label>Amount (KES)</label><input type="number" id="depositAmount" placeholder="Min KES 100"></div>'+
             '<div class="preset-group">'+
-            '<button class="preset-btn" onclick="setDeposit(100)">KES 100 🎁</button>'+
+            '<button class="preset-btn" onclick="setDeposit(100)">KES 100</button>'+
+            '<button class="preset-btn" onclick="setDeposit(200)">KES 200 🎁</button>'+
             '<button class="preset-btn" onclick="setDeposit(500)">KES 500</button>'+
             '<button class="preset-btn" onclick="setDeposit(1000)">KES 1,000</button>'+
             '</div>'+
@@ -661,7 +670,7 @@
 
         document.getElementById('dynamicContent').innerHTML =
             '<div class="card"><h3><i class="fas fa-users"></i> Invite & Earn</h3>'+
-            '<p style="font-size:14px;color:var(--text-muted);margin-bottom:16px;line-height:1.6">Share your link. When your friend signs up and deposits <strong style="color:var(--green-primary)">KES 75+</strong>, you earn <strong style="color:var(--green-primary)">KES 50 bonus</strong> instantly.</p>'+
+            '<p style="font-size:14px;color:var(--text-muted);margin-bottom:16px;line-height:1.6">Share your link. When your friend signs up and deposits <strong style="color:var(--green-primary)">KES 200+</strong>, you earn <strong style="color:var(--green-primary)">KES 50 bonus</strong> instantly.</p>'+
             '<div class="form-group"><label>Your Invite Link</label><div style="display:flex;gap:8px;align-items:center"><input type="text" id="refLinkInput" value="'+escapeHTML(refLink)+'" readonly style="flex:1;font-size:12px"><button class="btn-primary" style="white-space:nowrap" onclick="copyRefLink()"><i class="fas fa-copy"></i> Copy</button></div></div>'+
             '<div style="display:flex;gap:8px;margin-top:4px">'+
             '<button class="btn-outline" style="flex:1" onclick="shareWhatsApp()"><i class="fab fa-whatsapp"></i> WhatsApp</button>'+
@@ -730,7 +739,7 @@
         document.getElementById('loginError').innerText='';
         showLoader();
         api('/api/login','POST',{phone:phone,password:pwd}).then(function(data){
-            currentUser=data.user; saveSession(currentUser); hideLoader();
+            currentUser=data.user; saveSession(currentUser,data.token); hideLoader();
             closeAuthModal();
             document.getElementById('landing-page').classList.remove('active');
             document.getElementById('dashboard-app').classList.add('active');
@@ -813,7 +822,7 @@
         if(isNaN(amount)||amount<50){ showToast('Minimum deposit KES 50'); return; }
         depositInFlight=true; showLoader(); showToast('Sending STK Push...');
         var oldBalance = currentUser.balance;
-        api('/api/deposit','POST',{amount:amount,phone_number:phone,api_ref:'AKIBA-DEP-'+currentUser.phone+'-'+Date.now()}).then(function(data){
+        api('/api/deposit','POST',{phone:currentUser.phone,amount:amount,phone_number:phone}).then(function(data){
             hideLoader(); showToast('Enter M-Pesa PIN on your phone...');
             document.getElementById('depositConfirmModal').style.display='flex';
             // Give the webhook a few seconds' head start before the first check
@@ -934,8 +943,10 @@
     window.addEventListener('load', function(){
         initDarkMode(); hideLoader();
         var saved=sessionStorage.getItem('akiba_user');
-        if(saved){
+        var savedToken=sessionStorage.getItem('akiba_token');
+        if(saved && savedToken){
             currentUser=JSON.parse(saved);
+            authToken=savedToken;
             document.getElementById('landing-page').classList.remove('active');
             document.getElementById('dashboard-app').classList.add('active');
             document.getElementById('bottomNav').style.display='flex';
