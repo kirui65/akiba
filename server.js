@@ -1,6 +1,7 @@
 const express = require('express');
 const path = require('path');
 const crypto = require('crypto');
+const nodemailer = require('nodemailer');
 const admin = require('firebase-admin');
 
 // ── Firebase init ─────────────────────────────────────────────────────────────
@@ -16,6 +17,35 @@ const db = admin.firestore();
 const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
+
+// ── Email: free via Gmail SMTP + App Password ─────────────────────────────────
+// Uses your own Gmail account to send — no third-party signup, free for normal
+// volumes (Gmail's own sending limit is ~500/day, far more than a password-reset
+// flow needs). Requires GMAIL_USER and GMAIL_APP_PASSWORD env vars — see setup
+// notes below the routes.
+const mailTransport = (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD)
+    ? nodemailer.createTransport({
+        service: 'gmail',
+        auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASSWORD }
+    })
+    : null;
+
+async function sendResetCodeEmail(toEmail, code, name) {
+    if (!mailTransport) throw new Error('Email not configured (missing GMAIL_USER/GMAIL_APP_PASSWORD)');
+    await mailTransport.sendMail({
+        from: `"Akiba Wealth" <${process.env.GMAIL_USER}>`,
+        to: toEmail,
+        subject: `Your Akiba Wealth password reset code: ${code}`,
+        text: `Hi ${name || ''},\n\nYour password reset code is ${code}. It expires in 15 minutes.\n\nIf you didn't request this, you can safely ignore this email.\n\n— Akiba Wealth`,
+        html: `<div style="font-family:Arial,sans-serif;max-width:420px;margin:0 auto;padding:24px">
+            <h2 style="color:#0F6E3F;margin-bottom:4px">Akiba Wealth</h2>
+            <p>Hi ${name || ''},</p>
+            <p>Your password reset code is:</p>
+            <p style="font-size:32px;font-weight:700;letter-spacing:6px;color:#0B3B2A;margin:16px 0">${code}</p>
+            <p style="color:#5A6E64;font-size:13px">This code expires in 15 minutes. If you didn't request this, you can safely ignore this email.</p>
+        </div>`
+    });
+}
 
 // ── Helper: get user doc ──────────────────────────────────────────────────────
 async function getUser(phone) {
@@ -52,9 +82,10 @@ async function requireAuth(req, res, phone) {
 
 // ── AUTH: Signup ──────────────────────────────────────────────────────────────
 app.post('/api/signup', async (req, res) => {
-    const { name, phone, password, refCode } = req.body;
-    if (!name || !phone || !password) return res.status(400).json({ error: 'Fill all fields' });
+    const { name, phone, password, email, refCode } = req.body;
+    if (!name || !phone || !password || !email) return res.status(400).json({ error: 'Fill all fields' });
     if (!/^0(7|1)[0-9]{8}$/.test(phone)) return res.status(400).json({ error: 'Valid M-Pesa number required (07 or 01)' });
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: 'Valid email required for password recovery' });
     if (password.length < 6) return res.status(400).json({ error: 'Password min 6 chars' });
 
     const existing = await getUser(phone);
@@ -80,7 +111,7 @@ app.post('/api/signup', async (req, res) => {
     const authToken = genToken();
 
     const newUser = {
-        name, phone, password, inviteCode, authToken,
+        name, phone, password, email, inviteCode, authToken,
         balance: 50,
         bonusAmount: 50,
         activeInvestment: null,
@@ -126,16 +157,47 @@ app.post('/api/login', async (req, res) => {
     res.json({ success: true, user: stripPrivate({ ...user, authToken: token }), token });
 });
 
-// ── AUTH: Reset Password ──────────────────────────────────────────────────────
+// ── AUTH: Forgot password — email a reset code ────────────────────────────────
+app.post('/api/forgot-password', async (req, res) => {
+    const { phone } = req.body;
+    if (!phone || !/^0(7|1)[0-9]{8}$/.test(phone)) return res.status(400).json({ error: 'Valid M-Pesa number required' });
+    const user = await getUser(phone);
+    // Don't reveal whether the phone is registered — same generic message either way.
+    const generic = { success: true, message: 'If that number has an account with an email on file, a reset code has been sent.' };
+    if (!user || !user.email) return res.json(generic);
+
+    const code = String(Math.floor(100000 + Math.random() * 900000)); // 6 digits
+    await saveUser(phone, { resetCode: code, resetCodeExpiry: Date.now() + 15 * 60 * 1000 });
+
+    try {
+        await sendResetCodeEmail(user.email, code, user.name);
+    } catch (err) {
+        console.error('Failed to send reset email:', err);
+        return res.status(502).json({ error: 'Could not send reset email right now. Try again shortly.' });
+    }
+    res.json(generic);
+});
+
+// ── AUTH: Reset password with emailed code ────────────────────────────────────
 app.post('/api/reset-password', async (req, res) => {
-    const { phone, pin, newPassword } = req.body;
-    if (!phone || !pin || !newPassword) return res.status(400).json({ error: 'All fields required' });
-    if (!/^0(7|1)[0-9]{8}$/.test(phone)) return res.status(400).json({ error: 'Valid M-Pesa number required (07 or 01)' });
+    const { phone, code, newPassword } = req.body;
+    if (!phone || !code || !newPassword) return res.status(400).json({ error: 'All fields required' });
     if (newPassword.length < 6) return res.status(400).json({ error: 'Password min 6 chars' });
     const user = await getUser(phone);
     if (!user) return res.status(400).json({ error: 'Phone number not registered' });
-    if (phone.slice(-4) !== pin) return res.status(400).json({ error: 'PIN incorrect' });
-    await saveUser(phone, { password: newPassword });
+    if (!user.resetCode || !user.resetCodeExpiry || Date.now() > user.resetCodeExpiry) {
+        return res.status(400).json({ error: 'Code expired. Request a new one.' });
+    }
+    if (user.resetCode !== String(code).trim()) return res.status(400).json({ error: 'Incorrect code' });
+
+    // Password changed — burn the code and rotate the session token so any
+    // previously-leaked token/session is invalidated too.
+    await saveUser(phone, {
+        password: newPassword,
+        authToken: genToken(),
+        resetCode: null,
+        resetCodeExpiry: null
+    });
     res.json({ success: true });
 });
 
@@ -148,10 +210,13 @@ app.get('/api/user/:phone', async (req, res) => {
 
 // ── USER: Update profile ──────────────────────────────────────────────────────
 app.post('/api/update-profile', async (req, res) => {
-    const { phone, name } = req.body;
+    const { phone, name, email } = req.body;
     const user = await requireAuth(req, res, phone);
     if (!user) return;
-    await saveUser(phone, { name });
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: 'Valid email required' });
+    const update = { name };
+    if (email !== undefined) update.email = email || null;
+    await saveUser(phone, update);
     res.json({ success: true });
 });
 
