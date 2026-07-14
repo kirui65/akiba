@@ -1,7 +1,6 @@
 const express = require('express');
 const path = require('path');
 const crypto = require('crypto');
-const nodemailer = require('nodemailer');
 const admin = require('firebase-admin');
 
 // ── Firebase init ─────────────────────────────────────────────────────────────
@@ -18,33 +17,48 @@ const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ── Email: free via Gmail SMTP + App Password ─────────────────────────────────
-// Uses your own Gmail account to send — no third-party signup, free for normal
-// volumes (Gmail's own sending limit is ~500/day, far more than a password-reset
-// flow needs). Requires GMAIL_USER and GMAIL_APP_PASSWORD env vars — see setup
-// notes below the routes.
-const mailTransport = (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD)
-    ? nodemailer.createTransport({
-        service: 'gmail',
-        auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASSWORD }
-    })
-    : null;
+// ── Email: Resend HTTP API ────────────────────────────────────────────────────
+// Render's free tier blocks outbound traffic on SMTP ports (25, 465, 587), which
+// is why Gmail SMTP was timing out (ETIMEDOUT) — the connection never reaches
+// Gmail's servers at all. Resend sends over plain HTTPS instead, so it isn't
+// affected by that block and works on Render's free tier.
+//
+// Setup: sign up at resend.com, grab an API key, set RESEND_API_KEY in your
+// Render environment. By default this sends from Resend's shared test address
+// (onboarding@resend.dev), which works immediately with no domain setup — good
+// enough to ship this. When you're ready for production-grade deliverability
+// (better inbox placement, your own brand in the "from" address), verify your
+// own domain in the Resend dashboard and set RESEND_FROM to an address on it,
+// e.g. RESEND_FROM="Akiba Wealth <noreply@akibawealth.com>".
+const RESEND_API_KEY = process.env.RESEND_API_KEY;
+const RESEND_FROM = process.env.RESEND_FROM || 'Akiba Wealth <onboarding@resend.dev>';
 
 async function sendResetCodeEmail(toEmail, code, name) {
-    if (!mailTransport) throw new Error('Email not configured (missing GMAIL_USER/GMAIL_APP_PASSWORD)');
-    await mailTransport.sendMail({
-        from: `"Akiba Wealth" <${process.env.GMAIL_USER}>`,
-        to: toEmail,
-        subject: `Your Akiba Wealth password reset code: ${code}`,
-        text: `Hi ${name || ''},\n\nYour password reset code is ${code}. It expires in 15 minutes.\n\nIf you didn't request this, you can safely ignore this email.\n\n— Akiba Wealth`,
-        html: `<div style="font-family:Arial,sans-serif;max-width:420px;margin:0 auto;padding:24px">
-            <h2 style="color:#0F6E3F;margin-bottom:4px">Akiba Wealth</h2>
-            <p>Hi ${name || ''},</p>
-            <p>Your password reset code is:</p>
-            <p style="font-size:32px;font-weight:700;letter-spacing:6px;color:#0B3B2A;margin:16px 0">${code}</p>
-            <p style="color:#5A6E64;font-size:13px">This code expires in 15 minutes. If you didn't request this, you can safely ignore this email.</p>
-        </div>`
+    if (!RESEND_API_KEY) throw new Error('Email not configured (missing RESEND_API_KEY)');
+    const resendRes = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${RESEND_API_KEY}`,
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            from: RESEND_FROM,
+            to: toEmail,
+            subject: `Your Akiba Wealth password reset code: ${code}`,
+            text: `Hi ${name || ''},\n\nYour password reset code is ${code}. It expires in 15 minutes.\n\nIf you didn't request this, you can safely ignore this email.\n\n— Akiba Wealth`,
+            html: `<div style="font-family:Arial,sans-serif;max-width:420px;margin:0 auto;padding:24px">
+                <h2 style="color:#0F6E3F;margin-bottom:4px">Akiba Wealth</h2>
+                <p>Hi ${name || ''},</p>
+                <p>Your password reset code is:</p>
+                <p style="font-size:32px;font-weight:700;letter-spacing:6px;color:#0B3B2A;margin:16px 0">${code}</p>
+                <p style="color:#5A6E64;font-size:13px">This code expires in 15 minutes. If you didn't request this, you can safely ignore this email.</p>
+            </div>`
+        })
     });
+    if (!resendRes.ok) {
+        const errBody = await resendRes.text().catch(() => '');
+        throw new Error(`Resend API error (${resendRes.status}): ${errBody}`);
+    }
 }
 
 // ── Helper: get user doc ──────────────────────────────────────────────────────
