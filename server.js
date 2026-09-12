@@ -305,14 +305,20 @@ app.post('/api/withdraw', async (req, res) => {
 // ── DEPOSIT: Trigger Lipwa STK push ──────────────────────────────────────────
 app.post('/api/deposit', async (req, res) => {
     const { phone, amount, phone_number } = req.body;
+    console.log('=== DEPOSIT REQUEST ===');
+    console.log('User phone:', phone);
+    console.log('Amount:', amount);
+    console.log('M-Pesa phone:', phone_number);
+    
     if (!amount || isNaN(amount) || Number(amount) < 100) return res.status(400).json({ error: 'Minimum deposit is KES 100.' });
     if (!phone_number || !/^(07|01|254)\d{8,9}$/.test(String(phone_number).replace('+', ''))) return res.status(400).json({ error: 'Invalid phone number.' });
 
     const user = await requireAuth(req, res, phone);
     if (!user) return;
-    // Built server-side (not trusted from the client) so the account that gets
-    // credited is always the account whose session token was just verified above.
+    
+    // Build api_ref server-side
     const api_ref = `AKIBA-DEP-${phone}-${Date.now()}`;
+    console.log('Generated api_ref:', api_ref);
 
     const LIPWA_KEY     = process.env.LIPWA_API_KEY;
     const LIPWA_CHANNEL = process.env.LIPWA_CHANNEL_ID;
@@ -324,18 +330,23 @@ app.post('/api/deposit', async (req, res) => {
     }
 
     try {
+        console.log('Calling Lipwa API with callback:', CALLBACK_URL);
         const lipwaRes = await fetch('https://pay.lipwa.app/api/payments', {
             method: 'POST',
             headers: { 'Authorization': `Bearer ${LIPWA_KEY}`, 'Content-Type': 'application/json' },
             body: JSON.stringify({ amount: Number(amount), callback_url: CALLBACK_URL, channel_id: LIPWA_CHANNEL, phone_number, api_ref })
         });
         const data = await lipwaRes.json();
+        console.log('Lipwa response:', data);
+        
         if (lipwaRes.status === 201 && data.ResponseCode === '0') {
+            console.log('✓ STK push sent successfully');
             return res.json({ success: true, checkoutRequestId: data.CheckoutRequestID, message: data.CustomerMessage || 'STK push sent. Enter M-Pesa PIN.' });
         }
+        console.error('✗ Lipwa error:', data);
         return res.status(400).json({ error: data.ResponseDescription || data.message || 'Payment request failed.' });
     } catch (err) {
-        console.error('Lipwa error:', err);
+        console.error('✗ Lipwa fetch error:', err);
         return res.status(502).json({ error: 'Could not reach payment provider. Try again.' });
     }
 });
