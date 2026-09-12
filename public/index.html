@@ -848,29 +848,58 @@
     // truth, while /api/status is only used as a secondary signal to detect failure.
     function pollPaymentStatus(ref, amount, oldBalance, onSuccess, onFail){
         var MAX=60, attempts=0;
+        var found = false;
+        
         var checkBalance = function(){
             api('/api/user/'+currentUser.phone).then(function(u){
-                if(u.balance > oldBalance){
+                console.log('Poll attempt', attempts, '- Balance:', u.balance, 'Old:', oldBalance);
+                if(u.balance > oldBalance && !found){
+                    console.log('✓ Balance increased! New balance:', u.balance);
+                    found = true;
                     clearInterval(iv);
+                    clearTimeout(safetyTimeout);
                     onSuccess(u);
                     return;
                 }
             }).catch(function(e){
+                console.warn('Poll error:', e.message);
                 if(e.message && e.message.indexOf('Session expired')>-1){
                     clearInterval(iv);
+                    clearTimeout(safetyTimeout);
                     onFail('Session expired. Please log in again.');
                 }
             });
         };
+        
         checkBalance();
         var iv=setInterval(function(){
             attempts++;
             checkBalance();
             if(attempts>=MAX){
                 clearInterval(iv);
-                onFail('Still waiting for confirmation. If you completed the M-Pesa prompt, your balance will update shortly — check back or refresh.');
+                clearTimeout(safetyTimeout);
+                // Final attempt after timeout
+                api('/api/user/'+currentUser.phone).then(function(u){
+                    if(u.balance > oldBalance){
+                        console.log('✓ Final check found balance increase');
+                        onSuccess(u);
+                    } else {
+                        console.log('✗ Polling timed out after 120s, balance not updated');
+                        onFail('Deposit confirmation timed out. Check your balance manually. If the M-Pesa payment went through, it will appear in a moment.');
+                    }
+                }).catch(function(e){
+                    onFail('Could not verify deposit. Check your balance manually.');
+                });
             }
         },2000);
+        
+        // Safety timeout: even if polling finds it, close the loader after 120 seconds
+        var safetyTimeout = setTimeout(function(){
+            if(!found){
+                clearInterval(iv);
+                console.log('Safety timeout reached');
+            }
+        }, 120000);
     }
 
     function processDeposit(){
@@ -882,17 +911,40 @@
         if(isNaN(amount)||amount<50){ showToast('Minimum deposit KES 50'); return; }
         depositInFlight=true; showLoader(); showToast('Sending STK Push...');
         var oldBalance = currentUser.balance;
+        console.log('=== DEPOSIT INITIATED ===');
+        console.log('User phone:', currentUser.phone);
+        console.log('M-Pesa phone:', phone);
+        console.log('Amount:', amount);
+        console.log('Old balance:', oldBalance);
+        
         api('/api/deposit','POST',{phone:currentUser.phone,amount:amount,phone_number:phone}).then(function(data){
+            console.log('✓ STK push response:', data);
             hideLoader(); showToast('Enter M-Pesa PIN on your phone...');
             document.getElementById('depositConfirmModal').style.display='flex';
+            
+            // Set a max wait time - after 120 seconds, close the dialog and warn user
+            var maxWaitTimeout = setTimeout(function(){
+                if(depositInFlight){
+                    console.log('Max wait time reached (120s)');
+                    document.getElementById('depositConfirmModal').style.display='none';
+                    depositInFlight=false;
+                    showToast('Deposit is taking longer than expected. Check your balance manually.');
+                    api('/api/user/'+currentUser.phone).then(function(u){ currentUser=u; saveSession(u); updateUIAfterChange(); }).catch(function(){});
+                }
+            }, 120000);
+            
             pollPaymentStatus(data.checkoutRequestId, amount, oldBalance,
                     function(u){
+                        console.log('✓ Deposit confirmed! New balance:', u.balance);
+                        clearTimeout(maxWaitTimeout);
                         document.getElementById('depositConfirmModal').style.display='none';
                         currentUser=u; saveSession(u); updateUIAfterChange();
                         showToast('KES '+amount.toLocaleString()+' added to your balance!');
                         depositInFlight=false; resetIdleTimer();
                     },
                     function(reason){
+                        console.log('✗ Deposit failed or timed out:', reason);
+                        clearTimeout(maxWaitTimeout);
                         document.getElementById('depositConfirmModal').style.display='none';
                         showToast(reason);
                         depositInFlight=false;
