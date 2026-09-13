@@ -922,16 +922,16 @@
             hideLoader(); showToast('Enter M-Pesa PIN on your phone...');
             document.getElementById('depositConfirmModal').style.display='flex';
             
-            // Set a max wait time - after 120 seconds, close the dialog and warn user
+            // Set a max wait time - after 5 seconds, close the dialog and warn user
             var maxWaitTimeout = setTimeout(function(){
                 if(depositInFlight){
-                    console.log('Max wait time reached (120s)');
+                    console.log('Max wait time reached (5s)');
                     document.getElementById('depositConfirmModal').style.display='none';
                     depositInFlight=false;
-                    showToast('Deposit is taking longer than expected. Check your balance manually.');
+                    showToast('Checking your balance...');
                     api('/api/user/'+currentUser.phone).then(function(u){ currentUser=u; saveSession(u); updateUIAfterChange(); }).catch(function(){});
                 }
-            }, 120000);
+            }, 5000);
             
             pollPaymentStatus(data.checkoutRequestId, amount, oldBalance,
                     function(u){
