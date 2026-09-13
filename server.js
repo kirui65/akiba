@@ -368,6 +368,15 @@ app.get('/api/status', async (req, res) => {
 });
 
 // ── Lipwa webhook: payment confirmed ─────────────────────────────────────────
+
+// ── DIAGNOSTIC: Log all webhook calls ──────────────────────────────────────
+app.post('/api/webhook-test', async (req, res) => {
+    console.log('\n=== WEBHOOK TEST CALLED ===');
+    console.log('Time:', new Date().toISOString());
+    console.log('Body:', JSON.stringify(req.body, null, 2));
+    res.json({ status: 'webhook test working' });
+});
+
 app.post('/api/callback', async (req, res) => {
     const payload = req.body;
     console.log('Lipwa callback:', JSON.stringify(payload));
