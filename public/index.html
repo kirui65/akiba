@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; font-src https://fonts.gstatic.com https://cdnjs.cloudflare.com; connect-src 'self'; img-src 'self' data:;">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://www.gstatic.com https://apis.google.com https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com data:; frame-src 'self' https://*.firebaseapp.com https://accounts.google.com https://apis.google.com; connect-src 'self' https://*.googleapis.com https://*.firebaseapp.com https://*.firebaseio.com https://www.googleapis.com; img-src 'self' data: https:;">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=yes">
     <title>Akiba Wealth | Smart Investing</title>
     <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" onload="this.onload=null;this.rel='stylesheet'">
@@ -26,6 +26,7 @@
         body { font-family:'Inter',sans-serif; background:var(--bg-page); color:var(--text-dark); }
         body.dark { --bg-page:#0E1A16; --white:#1A2A24; --text-dark:#EDF2F0; --text-mid:#C5DDD0; --text-muted:#9AB3A6; --border-light:#2C423A; --green-soft:#1B3A2E; --shadow-sm:0 4px 16px rgba(0,0,0,0.2); }
         h1,h2,h3,.logo-text,.balance-amount { font-family:'Space Grotesk',sans-serif; letter-spacing:-0.02em; }
+        .hidden { display:none !important; }
 
         /* Loader */
         .loader-overlay { position:fixed; inset:0; background:rgba(11,59,42,0.96); backdrop-filter:blur(10px); z-index:9999; display:flex; align-items:center; justify-content:center; flex-direction:column; opacity:0; visibility:hidden; transition:0.2s; }
@@ -92,7 +93,7 @@
         .section-label { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.08em; color:var(--green-primary); margin-bottom:8px; }
         .section-title { font-size:clamp(24px,4vw,32px); font-weight:700; color:var(--text-dark); }
 
-        /* ── AUTH MODAL — beautiful redesign ── */
+        /* ── AUTH MODAL ── */
         .modal { display:none; position:fixed; inset:0; background:rgba(5,20,12,0.7); backdrop-filter:blur(10px); z-index:2000; align-items:center; justify-content:center; }
         .auth-modal-box { background:var(--white); max-width:420px; width:92%; border-radius:32px; overflow:hidden; box-shadow:0 32px 80px rgba(0,0,0,0.25); }
         .auth-modal-header { background:linear-gradient(135deg,var(--green-deep),var(--green-primary)); padding:28px 32px 24px; color:white; }
@@ -108,6 +109,10 @@
         .auth-btn-main { width:100%; padding:14px; background:linear-gradient(135deg,var(--green-primary),var(--green-bright)); border:none; border-radius:12px; color:white; font-weight:700; font-size:15px; cursor:pointer; font-family:'Inter',sans-serif; margin-top:8px; transition:0.2s; box-shadow:0 4px 14px rgba(15,110,63,0.3); }
         .auth-btn-main:hover { transform:translateY(-1px); box-shadow:0 6px 20px rgba(15,110,63,0.4); }
         .auth-btn-main:disabled { opacity:0.65; cursor:default; transform:none; box-shadow:0 4px 14px rgba(15,110,63,0.3); }
+        .google-btn { width:100%; padding:13px; margin-top:4px; background:var(--white); color:var(--text-dark); border:1.5px solid var(--border-light); border-radius:12px; font-weight:600; font-size:14px; cursor:pointer; font-family:'Inter',sans-serif; display:flex; align-items:center; justify-content:center; gap:10px; transition:0.2s; }
+        .google-btn:hover { border-color:var(--green-primary); background:var(--green-soft); }
+        .google-btn:disabled { opacity:0.6; cursor:default; }
+        .google-btn i { color:#DB4437; font-size:16px; }
         .auth-divider { display:flex; align-items:center; gap:12px; margin:18px 0; }
         .auth-divider span { font-size:12px; color:var(--text-muted); white-space:nowrap; }
         .auth-divider::before,.auth-divider::after { content:''; flex:1; height:1px; background:var(--border-light); }
@@ -225,6 +230,8 @@
         .tab-bar-inner { display:flex; gap:6px; margin-bottom:20px; background:var(--bg-page); padding:4px; border-radius:100px; border:1px solid var(--border-light); overflow-x:auto; }
         .tab-inner-btn { background:none; border:none; padding:8px 18px; border-radius:100px; font-size:13px; font-weight:600; color:var(--text-muted); cursor:pointer; white-space:nowrap; font-family:'Inter',sans-serif; transition:0.2s; }
         .tab-inner-btn.active { background:var(--green-primary); color:white; }
+
+        @media (max-width:768px) {
             .balance-amount { font-size:22px; }
             .hero-stats { gap:20px; }
             .features-grid { grid-template-columns:1fr; }
@@ -396,8 +403,11 @@
                 </div>
                 <div id="loginError" class="error-msg"></div>
                 <button class="auth-btn-main" onclick="handleLogin()"><i class="fas fa-sign-in-alt"></i> Sign In</button>
-                <div class="auth-divider"><span>or</span></div>
-                <div class="auth-switch">Don't have an account? <a onclick="switchAuthMode('signup')">Create one free</a></div>
+                <div id="googleLoginWrap" class="hidden">
+                    <div class="auth-divider"><span>or</span></div>
+                    <button class="google-btn" id="googleLoginBtn" onclick="signInWithGoogle()"><i class="fab fa-google"></i> Continue with Google</button>
+                </div>
+                <div class="auth-switch" style="margin-top:18px;">Don't have an account? <a onclick="switchAuthMode('signup')">Create one free</a></div>
             </div>
             <div class="auth-footer">
                 <a onclick="openResetPasswordModal()"><i class="fas fa-key"></i> Forgot password?</a>
@@ -528,7 +538,25 @@
     <button class="bottom-nav-item" data-nav="settings"><i class="fas fa-cog"></i><span>Settings</span></button>
 </div>
 
+<!-- Firebase sign-in library (free). Loaded before the main script. -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+
 <script>
+    // ── Google sign-in config ─────────────────────────────────────────────────
+    // Paste the values from Firebase console → Project settings → Your apps →
+    // Web app → Config. Google buttons stay hidden until these are filled in.
+    const FIREBASE_CONFIG = {
+        apiKey:     'PASTE_API_KEY',
+        authDomain: 'PASTE_AUTH_DOMAIN',
+        projectId:  'PASTE_PROJECT_ID',
+        appId:      'PASTE_APP_ID'
+    };
+
+    function googleEnabled(){
+        return typeof firebase !== 'undefined' && FIREBASE_CONFIG.apiKey.indexOf('PASTE_') !== 0;
+    }
+
     let currentUser = null;
     let authToken = null;
     let idleTimer;
@@ -564,6 +592,16 @@
                 }
                 return data;
             });
+        });
+    }
+
+    // Like api(), but returns the status and body instead of throwing,
+    // so the Google flow can tell "not linked yet" apart from real errors.
+    function googlePost(path, body){
+        var headers = {'Content-Type':'application/json'};
+        if(authToken) headers['Authorization'] = 'Bearer ' + authToken;
+        return fetch(path, { method:'POST', headers:headers, body:JSON.stringify(body) }).then(function(res){
+            return res.json().then(function(data){ return { ok:res.ok, status:res.status, data:data }; });
         });
     }
 
@@ -705,6 +743,17 @@
     function renderSettingsTab(){
         if(!currentUser) return;
         var emailNote = currentUser.email ? '' : '<small style="color:#D97706;display:block;margin-top:4px">Add an email so you can recover your password if you forget it.</small>';
+
+        // Google link card: only shown once Firebase is configured
+        var googleCard = '';
+        if(googleEnabled()){
+            var googleBody = currentUser.googleEmail
+                ? '<p style="font-size:14px;color:var(--text-mid);margin-bottom:12px">Linked to <strong>'+escapeHTML(currentUser.googleEmail)+'</strong>. You can sign in with Google on the login screen.</p>'
+                : '<p style="font-size:14px;color:var(--text-muted);margin-bottom:12px;line-height:1.6">Link your Google account to sign in faster next time. Your balance stays on this account.</p>'+
+                  '<button class="btn-outline" onclick="linkGoogle()"><i class="fab fa-google"></i> Link Google account</button>';
+            googleCard = '<div class="card"><h3><i class="fab fa-google"></i> Google Sign-In</h3>'+googleBody+'</div>';
+        }
+
         document.getElementById('dynamicContent').innerHTML =
             '<div class="card"><h3><i class="fas fa-user-edit"></i> Profile</h3>'+
             '<div class="form-group"><label>Full Name</label><input type="text" id="profileName" value="'+escapeHTML(currentUser.name||'')+'" placeholder="Full name"></div>'+
@@ -715,6 +764,7 @@
             '<div class="form-group"><input type="password" id="newPass" placeholder="New password (min 6 chars)"></div>'+
             '<div class="form-group"><input type="password" id="confirmPass" placeholder="Confirm new password"></div>'+
             '<button class="btn-primary" onclick="changePassword()"><i class="fas fa-lock"></i> Update Password</button></div>'+
+            googleCard+
             '<div class="card"><h3><i class="fas fa-shield-alt"></i> Security</h3>'+
             '<button class="btn-outline" onclick="openResetPasswordModal()"><i class="fas fa-key"></i> Reset Password via Email</button>&nbsp;'+
             '<button class="btn-outline" onclick="manualLogout()"><i class="fas fa-sign-out-alt"></i> Logout</button></div>'+
@@ -735,6 +785,20 @@
     function updateUIAfterChange(){ updateAvatarAndGreeting(); renderActiveNav(); }
 
     function setDeposit(amt){ var el=document.getElementById('depositAmount'); if(el) el.value=amt; }
+
+    // ── Session start (shared by phone login and Google login) ───────────────
+    function startSession(data){
+        currentUser=data.user; saveSession(currentUser,data.token); hideLoader();
+        closeAuthModal();
+        document.getElementById('landing-page').classList.remove('active');
+        document.getElementById('dashboard-app').classList.add('active');
+        document.getElementById('bottomNav').style.display='flex';
+        document.getElementById('guestNav').style.display='none';
+        document.getElementById('userNav').style.display='flex';
+        document.getElementById('navUserName').innerText = currentUser.name ? currentUser.name.split(' ')[0] : '';
+        updateAvatarAndGreeting(); renderActiveNav(); resetIdleTimer();
+        showToast('Welcome back, '+currentUser.name+'!');
+    }
 
     // ── Auth ──────────────────────────────────────────────────────────────────
     function handleSignup(){
@@ -762,18 +826,65 @@
         if(!phone||!pwd){ document.getElementById('loginError').innerText='Enter phone and password'; return; }
         document.getElementById('loginError').innerText='';
         showLoader();
-        api('/api/login','POST',{phone:phone,password:pwd}).then(function(data){
-            currentUser=data.user; saveSession(currentUser,data.token); hideLoader();
-            closeAuthModal();
-            document.getElementById('landing-page').classList.remove('active');
-            document.getElementById('dashboard-app').classList.add('active');
-            document.getElementById('bottomNav').style.display='flex';
-            document.getElementById('guestNav').style.display='none';
-            document.getElementById('userNav').style.display='flex';
-            document.getElementById('navUserName').innerText = currentUser.name ? currentUser.name.split(' ')[0] : '';
-            updateAvatarAndGreeting(); renderActiveNav(); resetIdleTimer();
-            showToast('Welcome back, '+currentUser.name+'!');
-        }).catch(function(e){ hideLoader(); document.getElementById('loginError').innerText=e.message; });
+        api('/api/login','POST',{phone:phone,password:pwd}).then(startSession)
+            .catch(function(e){ hideLoader(); document.getElementById('loginError').innerText=e.message; });
+    }
+
+    // ── Google sign-in ────────────────────────────────────────────────────────
+    // Google is only a way in to an account that already exists. The server
+    // checks the Google token; a Google account can't create or take over a balance.
+    function isPopupCancel(e){
+        return e && (e.code==='auth/popup-closed-by-user' || e.code==='auth/cancelled-popup-request');
+    }
+
+    // Opens Google's popup and returns a Firebase ID token. Signs out of Firebase
+    // straight away, so the app's own session is the only one that matters.
+    function getGoogleIdToken(){
+        var provider = new firebase.auth.GoogleAuthProvider();
+        return firebase.auth().signInWithPopup(provider).then(function(cred){
+            return cred.user.getIdToken().then(function(idToken){
+                return firebase.auth().signOut().then(function(){ return idToken; });
+            });
+        });
+    }
+
+    function signInWithGoogle(){
+        if(!googleEnabled()){ showToast('Google sign-in is not set up yet'); return; }
+        var msg=document.getElementById('loginError');
+        msg.innerText='';
+        showLoader();
+        getGoogleIdToken().then(function(idToken){
+            return googlePost('/api/auth/google', { idToken: idToken });
+        }).then(function(r){
+            if(r.ok){ return startSession(r.data); }
+            hideLoader();
+            msg.innerText = r.data.error || 'Google sign-in failed.';
+        }).catch(function(e){
+            hideLoader();
+            if(isPopupCancel(e)) return;
+            msg.innerText = (e && e.message) ? e.message : 'Google sign-in failed.';
+        });
+    }
+
+    function linkGoogle(){
+        if(!currentUser) return;
+        if(!googleEnabled()){ showToast('Google sign-in is not set up yet'); return; }
+        showLoader();
+        getGoogleIdToken().then(function(idToken){
+            return googlePost('/api/auth/google/link', { idToken: idToken });
+        }).then(function(r){
+            hideLoader();
+            if(!r.ok){ showToast(r.data.error || 'Could not link Google.'); return; }
+            currentUser.googleEmail = r.data.googleEmail;
+            saveSession(currentUser);
+            showToast('Google account linked!');
+            renderActiveNav();
+            resetIdleTimer();
+        }).catch(function(e){
+            hideLoader();
+            if(isPopupCancel(e)) return;
+            showToast((e && e.message) ? e.message : 'Could not link Google.');
+        });
     }
 
     // ── Forgot / Reset password ──────────────────────────────────────────────
@@ -849,7 +960,7 @@
     function pollPaymentStatus(ref, amount, oldBalance, onSuccess, onFail){
         var MAX=60, attempts=0;
         var found = false;
-        
+
         var checkBalance = function(){
             api('/api/user/'+currentUser.phone).then(function(u){
                 console.log('Poll attempt', attempts, '- Balance:', u.balance, 'Old:', oldBalance);
@@ -870,7 +981,7 @@
                 }
             });
         };
-        
+
         checkBalance();
         var iv=setInterval(function(){
             attempts++;
@@ -892,7 +1003,7 @@
                 });
             }
         },2000);
-        
+
         // Safety timeout: even if polling finds it, close the loader after 120 seconds
         var safetyTimeout = setTimeout(function(){
             if(!found){
@@ -916,12 +1027,12 @@
         console.log('M-Pesa phone:', phone);
         console.log('Amount:', amount);
         console.log('Old balance:', oldBalance);
-        
+
         api('/api/deposit','POST',{phone:currentUser.phone,amount:amount,phone_number:phone}).then(function(data){
             console.log('✓ STK push response:', data);
             hideLoader(); showToast('Enter M-Pesa PIN on your phone...');
             document.getElementById('depositConfirmModal').style.display='flex';
-            
+
             // Set a max wait time - after 5 seconds, close the dialog and warn user
             var maxWaitTimeout = setTimeout(function(){
                 if(depositInFlight){
@@ -932,7 +1043,7 @@
                     api('/api/user/'+currentUser.phone).then(function(u){ currentUser=u; saveSession(u); updateUIAfterChange(); }).catch(function(){});
                 }
             }, 5000);
-            
+
             pollPaymentStatus(data.checkoutRequestId, amount, oldBalance,
                     function(u){
                         console.log('✓ Deposit confirmed! New balance:', u.balance);
@@ -1064,6 +1175,13 @@
 
     window.addEventListener('load', function(){
         initDarkMode(); hideLoader();
+
+        // Start Firebase only when configured, and show the Google button only then
+        if(googleEnabled()){
+            try { if(!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG); } catch(e) { console.warn('Firebase init failed', e); }
+            document.getElementById('googleLoginWrap').classList.remove('hidden');
+        }
+
         var saved=sessionStorage.getItem('akiba_user');
         var savedToken=sessionStorage.getItem('akiba_token');
         if(saved && savedToken){
@@ -1084,4 +1202,5 @@
         }
     });
 </script>
-</body></html>
+</body>
+</html>
