@@ -58,10 +58,11 @@ async function saveUser(phone, data) {
 
 // ── Helper: session tokens ─────────────────────────────────────────────────────
 // Every user gets a random session token on signup/login. The client stores it and
-// sends it back on every request via the X-Auth-Token header. Any endpoint that reads
-// or changes one specific person's data must confirm that header matches the token on
-// file for that phone — otherwise one user's balance, history, and referral data would
-// be readable (and in a couple of cases, spendable) by anyone who knows their number.
+// sends it back on every request via the Authorization: Bearer header. Any endpoint
+// that reads or changes one specific person's data must confirm that header matches
+// the token on file for that phone — otherwise one user's balance, history, and
+// referral data would be readable (and in a couple of cases, spendable) by anyone
+// who knows their number.
 function genToken() {
     return crypto.randomBytes(24).toString('hex');
 }
@@ -262,7 +263,7 @@ app.post('/api/check-matured', async (req, res) => {
 
     const elapsed = Date.now() - user.activeInvestment.startDate;
     const sevenDays = 7 * 24 * 60 * 60 * 1000;
-    if (elapsed < sevenDays) return res.json({ matured: false, user: user });
+    if (elapsed < sevenDays) return res.json({ matured: false, user: stripPrivate(user) });
 
     const { amount, returnAmount } = user.activeInvestment;
     const profit = returnAmount - amount;
@@ -309,13 +310,13 @@ app.post('/api/deposit', async (req, res) => {
     console.log('User phone:', phone);
     console.log('Amount:', amount);
     console.log('M-Pesa phone:', phone_number);
-    
+
     if (!amount || isNaN(amount) || Number(amount) < 100) return res.status(400).json({ error: 'Minimum deposit is KES 100.' });
     if (!phone_number || !/^(07|01|254)\d{8,9}$/.test(String(phone_number).replace('+', ''))) return res.status(400).json({ error: 'Invalid phone number.' });
 
     const user = await requireAuth(req, res, phone);
     if (!user) return;
-    
+
     // Build api_ref server-side
     const api_ref = `AKIBA-DEP-${phone}-${Date.now()}`;
     console.log('Generated api_ref:', api_ref);
@@ -338,7 +339,7 @@ app.post('/api/deposit', async (req, res) => {
         });
         const data = await lipwaRes.json();
         console.log('Lipwa response:', data);
-        
+
         if (lipwaRes.status === 201 && data.ResponseCode === '0') {
             console.log('✓ STK push sent successfully');
             return res.json({ success: true, checkoutRequestId: data.CheckoutRequestID, message: data.CustomerMessage || 'STK push sent. Enter M-Pesa PIN.' });
@@ -367,8 +368,6 @@ app.get('/api/status', async (req, res) => {
     }
 });
 
-// ── Lipwa webhook: payment confirmed ─────────────────────────────────────────
-
 // ── DIAGNOSTIC: Log all webhook calls ──────────────────────────────────────
 app.post('/api/webhook-test', async (req, res) => {
     console.log('\n=== WEBHOOK TEST CALLED ===');
@@ -377,6 +376,7 @@ app.post('/api/webhook-test', async (req, res) => {
     res.json({ status: 'webhook test working' });
 });
 
+// ── Lipwa webhook: payment confirmed ─────────────────────────────────────────
 app.post('/api/callback', async (req, res) => {
     const payload = req.body;
     console.log('Lipwa callback:', JSON.stringify(payload));
@@ -410,7 +410,7 @@ app.post('/api/callback', async (req, res) => {
                     transactionHistory: [txNote, ...(user.transactionHistory || [])].slice(0, 100)
                 };
 
-                // Referral bonus: credit inviter KES 50 once their friend's first deposit clears KES 75.
+                // Referral bonus: credit inviter KES 50 once their friend's first deposit clears KES 200.
                 // The "joined" entry for this person was already recorded on the inviter's side at
                 // signup — we update that same entry here instead of adding a second one.
                 if (!user.referralBonusPaid && user.referredBy && amount >= 200) {
@@ -446,6 +446,9 @@ app.post('/api/callback', async (req, res) => {
     }
     res.json({ received: true });
 });
+
+// ── GOOGLE SIGN-IN (see google-auth.js) ──────────────────────────────────────
+require('./google-auth')(app, { db, admin });
 
 // SPA fallback
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
